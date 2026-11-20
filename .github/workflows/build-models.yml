@@ -1,0 +1,119 @@
+# Builds the on-device Tasmee' models (whisper.cpp ggml) and publishes them as
+# release assets. Model files are never committed to git, only uploaded here.
+#
+# Run: Actions -> "Build models" -> Run workflow (tag defaults to models-r1).
+name: Build models
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag
+        default: models-r1
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  WCPP: v1.9.5                                          # d1be6fde11ac6e0407606b4e42fe72d34add8037
+  OAI: v20250625                                        # openai/whisper, only for mel_filters.npz
+  BIG_REPO: naazimsnh02/whisper-large-v3-turbo-ar-quran
+  BIG_REV: 670f826cf3731ae9f6b3f54d4a417d8f600e2cd2
+  BASE_REPO: tarteel-ai/whisper-base-ar-quran
+  BASE_REV: 5c3c53fdf9272c4f6ee0bee09a1e5a4a615ee25c
+  VAD_REV: 9ffd54a1e1ee413ddf265af9913beaf518d1639b     # ggml-org/whisper-vad
+  HF_HUB_DISABLE_TELEMETRY: "1"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq cmake build-essential ffmpeg libgomp1 >/dev/null
+          pip install -q --index-url https://download.pytorch.org/whl/cpu torch
+          pip install -q transformers==4.56.2 numpy safetensors huggingface_hub
+
+      - name: Build whisper.cpp tools
+        run: |
+          git clone -q --depth 1 -b "$WCPP" https://github.com/ggml-org/whisper.cpp
+          git clone -q --depth 1 -b "$OAI" https://github.com/openai/whisper
+          echo "whisper.cpp $(git -C whisper.cpp rev-parse HEAD)"
+          cmake -S whisper.cpp -B whisper.cpp/build -DCMAKE_BUILD_TYPE=Release \
+            -DWHISPER_BUILD_TESTS=OFF -DGGML_NATIVE=OFF >/dev/null
+          cmake --build whisper.cpp/build -j 4 --target whisper-quantize whisper-cli >/dev/null
+
+      - name: Download source models
+        run: |
+          python - <<'PY'
+          import os
+          from huggingface_hub import snapshot_download as s
+          s(os.environ["BIG_REPO"], revision=os.environ["BIG_REV"], local_dir="in/big",
+            allow_patterns=["*.json", "*.txt", "model.safetensors"])
+          s(os.environ["BASE_REPO"], revision=os.environ["BASE_REV"], local_dir="in/base",
+            allow_patterns=["*.json", "*.txt", "pytorch_model.bin"])
+          PY
+          # tarteel base: config max_length 1024 is written as n_text_ctx and the
+          # model then fails to load; the decoder has 448 positions.
+          python tools/patch_base_config.py in/base/config.json
+
+      - name: Convert and quantize
+        run: |
+          mkdir -p out work/big work/base
+          Q=whisper.cpp/build/bin/whisper-quantize
+          python whisper.cpp/models/convert-h5-to-ggml.py in/base whisper work/base
+          $Q work/base/ggml-model.bin out/quran-small-base-q8_0-r1.bin q8_0
+          rm -rf work/base in/base
+          python whisper.cpp/models/convert-h5-to-ggml.py in/big whisper work/big
+          rm -rf in/big ~/.cache/huggingface
+          $Q work/big/ggml-model.bin out/quran-big-turbo-q5_0-r1.bin q5_0
+          rm -rf work/big
+          curl -fsSL -o out/silero-v6.2.0.bin \
+            "https://huggingface.co/ggml-org/whisper-vad/resolve/$VAD_REV/ggml-silero-v6.2.0.bin"
+          ls -l out
+
+      - name: Benchmark clip (1:2, 16 kHz PCM16 mono)
+        run: |
+          curl -fsSL -o work/001002.mp3 https://everyayah.com/data/Alafasy_128kbps/001002.mp3
+          ffmpeg -loglevel error -i work/001002.mp3 -ac 1 -ar 16000 -f s16le out/bench-r1.pcm
+          ffmpeg -loglevel error -f s16le -ar 16000 -ac 1 -i out/bench-r1.pcm work/bench.wav
+
+      - name: Check every model loads and transcribes
+        run: |
+          for m in out/quran-small-base-q8_0-r1.bin out/quran-big-turbo-q5_0-r1.bin; do
+            echo "== $m"
+            whisper.cpp/build/bin/whisper-cli -m "$m" -f work/bench.wav -l ar -nt -t 4 2>/dev/null | tee work/text.txt
+            test -s work/text.txt
+          done
+
+      - name: Manifest, NOTICE, checksums
+        run: |
+          cp NOTICE.txt out/
+          python tools/make_manifest.py out > out/manifest.json
+          (cd out && sha256sum *.bin *.pcm > SHA256SUMS)
+          cat out/manifest.json out/SHA256SUMS
+          python tools/compare_reference.py out/SHA256SUMS
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" --title "Tasmee' models $TAG" \
+              --notes "On-device Quran recitation models (whisper.cpp ggml). See README and NOTICE.txt."
+          gh release upload "$TAG" out/* --clobber

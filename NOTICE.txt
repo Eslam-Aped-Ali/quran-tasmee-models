@@ -1,0 +1,38 @@
+Tasmee' on-device models — third-party notices
+================================================
+
+The files in this release are format conversions (whisper.cpp ggml,
+quantized) of the works below. No weights were retrained or changed.
+
+1. quran-big-turbo-q5_0-r1.bin
+   Source: naazimsnh02/whisper-large-v3-turbo-ar-quran (Hugging Face),
+           revision 670f826cf3731ae9f6b3f54d4a417d8f600e2cd2
+   Based on: openai/whisper-large-v3-turbo
+   Licence: Apache License 2.0 — https://www.apache.org/licenses/LICENSE-2.0
+   Changes: converted to ggml f16 with whisper.cpp convert-h5-to-ggml.py,
+            then quantized to q5_0 with whisper-quantize (whisper.cpp v1.9.5).
+
+2. quran-small-base-q8_0-r1.bin
+   Source: tarteel-ai/whisper-base-ar-quran (Hugging Face),
+           revision 5c3c53fdf9272c4f6ee0bee09a1e5a4a615ee25c
+   Based on: openai/whisper-base
+   Licence: Apache License 2.0 — https://www.apache.org/licenses/LICENSE-2.0
+   Changes: config.json max_length set to max_target_positions (448) so the
+            converted model loads; converted to ggml f16, quantized to q8_0.
+
+3. silero-v6.2.0.bin
+   Source: ggml-org/whisper-vad (Hugging Face), commit
+           9ffd54a1e1ee413ddf265af9913beaf518d1639b, file ggml-silero-v6.2.0.bin
+   Original: Silero VAD v6.2.0 — https://github.com/snakers4/silero-vad
+   Licence: MIT. Copyright (c) 2020-present Silero Team.
+
+4. Tools: whisper.cpp v1.9.5 — https://github.com/ggml-org/whisper.cpp
+   Licence: MIT. Copyright (c) 2023-2026 The ggml authors.
+   OpenAI Whisper (mel filters) — MIT. Copyright (c) 2022 OpenAI.
+
+5. bench-r1.pcm: a few seconds of Al-Fatiha 1:2 (Mishary Alafasy) from
+   everyayah.com, converted to 16 kHz mono PCM16, used only to time the
+   model on the phone.
+
+Apache License 2.0 (summary of obligations): keep this notice and the
+licence text with any redistribution, and state the changes made.
