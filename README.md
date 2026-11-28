@@ -13,3 +13,9 @@ The app downloads one model on demand and runs it fully offline with whisper.cpp
 | `NOTICE.txt` | Licences (Apache-2.0 models, MIT whisper.cpp / Silero). |
 
 Model files live only as release assets, never in git. To rebuild: Actions → **Build models** → Run workflow.
+
+To change only the manifest's platform flags (no rebuild): download the release's `manifest.json`,
+run `python3 tools/set_platforms.py manifest.json`, and upload it back with
+`gh release upload models-r1 manifest.json --clobber`. Since app builds after 2026-11-27 every phone
+is offered both models whatever `enabled` says; `use_gpu` is read only from an entry with
+`enabled: true` (else the CPU).

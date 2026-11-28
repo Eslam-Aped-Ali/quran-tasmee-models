@@ -21,8 +21,10 @@ def model(model_id, version, name, source, min_ram, rtf_ok, rtf_max):
     return {
         "id": model_id, "version": version, **info(name),
         "source": source, "licence": "Apache-2.0",
+        # Every phone is offered both models (the app's own bench decides what runs).
+        # The CPU everywhere: the iOS Metal path has not been run on a device yet.
         "platforms": {"android": {"enabled": True, "use_gpu": False},
-                      "ios": {"enabled": False, "use_gpu": True}},
+                      "ios": {"enabled": True, "use_gpu": False}},
         "min_ram_mb": min_ram, "threads": [2, 4],
         "rtf_ok": rtf_ok, "rtf_max": rtf_max, "interim_rtf": 0.3,
         "unclear_logprob": -0.6, "min_logprob": -1.0, "max_compression": 2.4,
